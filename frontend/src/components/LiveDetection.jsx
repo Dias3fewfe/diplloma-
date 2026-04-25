@@ -23,7 +23,7 @@ export default function LiveDetection() {
       if (data.status === 'ok') setResult(data.data)
       else setError(data.error ?? 'Server error')
     } catch {
-      setError('Cannot reach backend — ensure uvicorn is running on port 8000.')
+      setError(`Cannot reach backend at ${import.meta.env.VITE_API_URL}`)
     } finally { setLoading(false) }
   }
 
