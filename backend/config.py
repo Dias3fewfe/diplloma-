@@ -17,6 +17,7 @@ DB_DIR = ROOT_DIR / "backend" / "db"
 # ---------------------------------------------------------------------------
 RAW_CSV = RAW_DIR / "CICIDS2017.csv"
 CLEANED_CSV = PROCESSED_DIR / "cleaned.csv"
+SAMPLE_CSV = PROCESSED_DIR / "sample.csv"   # 5k-row subset committed to git
 
 # ---------------------------------------------------------------------------
 # Serialised artefacts

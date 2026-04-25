@@ -29,7 +29,7 @@ from backend.api.schemas import (
     SimulateSummary,
     StatsResponse,
 )
-from backend.config import CLEANED_CSV, LABEL_COLUMN
+from backend.config import CLEANED_CSV, LABEL_COLUMN, SAMPLE_CSV
 from backend.db.database import Alert, get_db
 from backend.pipeline.predict import predict_batch_scaled, predict_single
 
@@ -117,14 +117,16 @@ def simulate(db: Session = Depends(get_db)) -> APIResponse:
     Returns:
         APIResponse whose data is a SimulateSummary.
     """
-    if not CLEANED_CSV.exists():
+    # Prefer the full cleaned dataset locally; fall back to the committed sample on Render.
+    csv_path = CLEANED_CSV if CLEANED_CSV.exists() else SAMPLE_CSV
+    if not csv_path.exists():
         raise HTTPException(
             status_code=503,
-            detail=f"Cleaned dataset not found at {CLEANED_CSV}. "
-                   "Run preprocess.py first.",
+            detail="No dataset available for simulation. "
+                   "Expected data/processed/sample.csv to be present.",
         )
 
-    df = pd.read_csv(CLEANED_CSV, low_memory=False).sample(
+    df = pd.read_csv(csv_path, low_memory=False).sample(
         n=SIMULATE_ROWS, random_state=None  # different each call
     )
     labels = df[LABEL_COLUMN].tolist() if LABEL_COLUMN in df.columns else ["unknown"] * SIMULATE_ROWS

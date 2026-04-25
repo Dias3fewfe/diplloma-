@@ -1,9 +1,13 @@
+# Large data files — not committed
 data/raw/
-backend/models/*.pkl
+data/processed/cleaned.csv
+
+# Python
 __pycache__/
+*.pyc
 *.db
 .env
-*.pyc
+
+# Frontend
 node_modules/
 frontend/dist/
-data/
