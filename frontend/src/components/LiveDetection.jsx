@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import axios from 'axios'
 
-const API = 'http://localhost:8000/api'
+const API = `${import.meta.env.VITE_API_URL}/api`
 
 const card = { backgroundColor: '#1a1d27', border: '1px solid #2a2d3a', borderRadius: 4 }
 const lbl  = { fontSize: 11, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#64748b' }

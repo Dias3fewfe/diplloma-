@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
 
-const API      = 'http://localhost:8000/api'
+const API      = `${import.meta.env.VITE_API_URL}/api`
 const PAGE     = 20
 const card     = { backgroundColor: '#1a1d27', border: '1px solid #2a2d3a', borderRadius: 4 }
 const TH_STYLE = { padding: '8px 12px', fontSize: 11, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#64748b', textAlign: 'left', borderBottom: '1px solid #2a2d3a', background: '#1a1d27', position: 'sticky', top: 0 }
