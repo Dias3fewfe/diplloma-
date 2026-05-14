@@ -151,6 +151,15 @@ API docs: http://localhost:8000/docs
 - [x] Запустить train.py → random_forest.pkl обучен (10MB)
 - [x] Запустить train_classifier.py → attack_classifier.pkl обучен (40MB)
 - [x] Запустить evaluate.py — F1=0.784 (INTRUSION), macro avg F1=0.862, accuracy=90.6%
+- [x] Авторизация (JWT):
+      - backend/api/auth_routes.py — POST /api/auth/login, GET /api/auth/verify
+        JWT HS256, 24ч срок, credentials из .env (ADMIN_USERNAME / ADMIN_PASSWORD)
+        Defaults: admin / admin123
+      - backend/config.py — SECRET_KEY, ADMIN_USERNAME, ADMIN_PASSWORD, ACCESS_TOKEN_EXPIRE_HOURS
+      - backend/main.py — подключён router_auth
+      - frontend/src/components/LoginPage.jsx — форма входа, тёмная тема
+      - frontend/src/App.jsx — проверка токена при загрузке, имя пользователя + кнопка Logout в хедере
+      - requirements.txt — добавлен python-jose[cryptography]
 - [x] Экспорт алертов в PDF/CSV:
       - backend/api/routes.py — GET /api/alerts/export/csv и /api/alerts/export/pdf
         CSV: все поля + голоса IF/LOF/SVM/RF, filename с timestamp

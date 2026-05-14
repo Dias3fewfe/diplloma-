@@ -1,0 +1,347 @@
+# Network Intrusion Detection System (NIDS)
+
+Дипломный проект — веб-система обнаружения сетевых вторжений на основе ансамбля алгоритмов машинного обучения.
+
+---
+
+## Описание
+
+NIDS анализирует параметры сетевого трафика и в реальном времени определяет, является ли соединение нормальным или потенциальным вторжением. Система использует **ансамбль из 4 моделей**: три алгоритма детектирования аномалий (обучение без учителя) и один классификатор на основе случайного леса (обучение с учителем). Результат принимается **голосованием большинства** (≥ 2 из 4 голосов = вторжение).
+
+Дополнительно система определяет **тип атаки** (DDoS, PortScan, BruteForce и др.) и отправляет уведомления в **Telegram** при обнаружении угрозы с высокой уверенностью.
+
+---
+
+## Демо
+
+| Компонент | URL |
+|---|---|
+| Дашборд (frontend) | https://diplloma.vercel.app |
+| API (backend) | https://diplloma-api.onrender.com |
+| API документация | https://diplloma-api.onrender.com/docs |
+
+**Доступ:** `admin` / `admin123`
+
+---
+
+## Архитектура
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  React Dashboard                     │
+│  Overview │ Live Detection │ Alerts │ Models │ ...   │
+└───────────────────┬─────────────────────────────────┘
+                    │ HTTP / WebSocket
+┌───────────────────▼─────────────────────────────────┐
+│                 FastAPI Backend                      │
+│  /api/predict   /api/simulate   /api/alerts          │
+│  /api/stats     /api/auth       /api/capture         │
+└───────────┬───────────────┬─────────────────────────┘
+            │               │
+┌───────────▼───────┐ ┌─────▼──────────────────────────┐
+│   ML Ensemble     │ │   SQLite Database               │
+│  Isolation Forest │ │   alerts table                  │
+│  LOF              │ │   (prediction, attack_type,     │
+│  One-Class SVM    │ │    confidence, model_votes)     │
+│  Random Forest    │ └─────────────────────────────────┘
+└───────────────────┘
+```
+
+---
+
+## Технологический стек
+
+| Слой | Технологии |
+|---|---|
+| **Backend** | Python 3.11, FastAPI, Uvicorn |
+| **ML** | scikit-learn, pandas, numpy, joblib |
+| **Database** | SQLite, SQLAlchemy |
+| **Frontend** | React 18, Vite, Recharts, TailwindCSS |
+| **Live Capture** | Scapy |
+| **Notifications** | Telegram Bot API, httpx |
+| **Auth** | JWT (python-jose) |
+| **Deploy** | Vercel (frontend), Render (backend) |
+
+---
+
+## Модели машинного обучения
+
+### Ансамбль
+
+| Модель | Тип | Обучающая выборка | Описание |
+|---|---|---|---|
+| **Isolation Forest** | Unsupervised | 200 000 строк (BENIGN) | Изолирует аномалии через случайные разбиения |
+| **Local Outlier Factor** | Unsupervised | 50 000 строк (BENIGN) | Сравнивает плотность точки с её соседями |
+| **One-Class SVM** | Unsupervised | 30 000 строк (BENIGN) | Строит границу вокруг нормального трафика |
+| **Random Forest** | Supervised | 150 000 строк (все классы) | Классифицирует на основе размеченных данных |
+
+Три unsupervised-модели обучены **только на нормальном трафике** — они учатся тому, как выглядит норма, и сигнализируют о любом отклонении. Random Forest обучен на полном датасете с метками.
+
+### Логика ансамбля
+
+```
+vote = IF_vote + LOF_vote + SVM_vote + RF_vote
+
+if vote >= 2:
+    prediction = "INTRUSION"
+    confidence = vote / 4
+else:
+    prediction = "NORMAL"
+```
+
+### Классификатор типов атак
+
+Отдельная модель Random Forest (200 деревьев, 150k строк) определяет конкретный тип атаки среди 9 классов: `DDoS`, `DoS Hulk`, `PortScan`, `DoS GoldenEye`, `DoS slowloris`, `DoS Slowhttptest`, `Bot`, `Infiltration`, `Heartbleed`.
+
+### Датасет
+
+**CICIDS2017** (Canadian Institute for Cybersecurity) — 2 212 030 записей сетевого трафика, 78 признаков, 10 классов.
+
+| Класс | Количество |
+|---|---|
+| BENIGN | 1 567 853 |
+| DoS Hulk | 231 073 |
+| PortScan | 158 930 |
+| DDoS | 128 027 |
+| DoS GoldenEye | 10 293 |
+| DoS slowloris | 5 796 |
+| DoS Slowhttptest | 5 499 |
+| Bot | 1 966 |
+| Infiltration | 36 |
+| Heartbleed | 11 |
+
+---
+
+## Результаты оценки (evaluate.py)
+
+Тестовая выборка: **9 997 строк** (стратифицированная по всем классам).
+
+### Ансамблевые метрики
+
+| Метрика | Значение |
+|---|---|
+| **Accuracy** | **90.6%** |
+| **F1-score (INTRUSION)** | **0.784** |
+| **Precision (INTRUSION)** | 88.9% |
+| **Recall (INTRUSION)** | 70.1% |
+| **Macro avg F1** | **0.862** |
+
+### Метрики по каждой модели
+
+| Модель | True Positive | False Positive | Recall | FPR |
+|---|---|---|---|---|
+| Isolation Forest | 789 | 369 | 32.3% | 4.9% |
+| Local Outlier Factor | 919 | 350 | 37.6% | 4.6% |
+| One-Class SVM | 1 147 | 367 | 47.0% | 4.9% |
+| **Random Forest** | **2 441** | **3** | **100.0%** | **0.0%** |
+
+### Detection Rate по типам атак
+
+| Тип атаки | Обнаружено |
+|---|---|
+| DoS Slowhttptest | 100% |
+| Heartbleed | 100% |
+| Infiltration | 100% |
+| DoS Hulk | 78.2% |
+| DDoS | 71.5% |
+| DoS slowloris | 69.2% |
+| PortScan | 57.9% |
+| DoS GoldenEye | 56.5% |
+
+---
+
+## Структура проекта
+
+```
+diplloma/
+├── backend/
+│   ├── main.py                   # FastAPI приложение
+│   ├── config.py                 # Все пути и гиперпараметры
+│   ├── notifications.py          # Telegram уведомления
+│   ├── models/                   # Обученные .pkl файлы
+│   │   ├── isolation_forest.pkl
+│   │   ├── lof.pkl
+│   │   ├── svm.pkl
+│   │   ├── random_forest.pkl
+│   │   ├── attack_classifier.pkl
+│   │   └── scaler.pkl
+│   ├── pipeline/
+│   │   ├── preprocess.py         # Очистка данных, StandardScaler
+│   │   ├── train.py              # Обучение 4 ансамблевых моделей
+│   │   ├── train_classifier.py   # Обучение классификатора типов атак
+│   │   ├── predict.py            # Логика инференса, lru_cache
+│   │   ├── evaluate.py           # Оценка ансамбля, метрики
+│   │   └── capture.py            # Live-захват пакетов через Scapy
+│   ├── api/
+│   │   ├── routes.py             # /predict /simulate /alerts /stats /export
+│   │   ├── auth_routes.py        # /auth/login /auth/verify (JWT)
+│   │   ├── capture_routes.py     # /capture/* + WebSocket /ws/live
+│   │   └── schemas.py            # Pydantic модели
+│   └── db/
+│       └── database.py           # SQLite, таблица alerts
+├── frontend/
+│   └── src/
+│       ├── App.jsx               # Роутинг вкладок, авторизация
+│       └── components/
+│           ├── Overview.jsx      # Статистика, графики
+│           ├── LiveDetection.jsx # Симуляция в реальном времени
+│           ├── LiveCapturePanel.jsx # Живой захват пакетов
+│           ├── AlertsTable.jsx   # Таблица алертов, экспорт CSV/PDF
+│           ├── ModelsPanel.jsx   # Информация о моделях
+│           └── LoginPage.jsx     # Страница входа
+├── data/
+│   ├── raw/                      # CICIDS2017.csv (не в git)
+│   └── processed/
+│       ├── cleaned.csv           # После preprocess.py (не в git)
+│       └── sample.csv            # 5k строк для деплоя
+├── .env.example                  # Шаблон переменных окружения
+├── requirements.txt
+└── CLAUDE.md
+```
+
+---
+
+## Функциональность дашборда
+
+### Overview
+- Ключевые метрики: всего алертов, вторжений, detection rate
+- BarChart топ-5 типов атак
+- Индикатор статуса Telegram
+
+### Live Detection
+- Запуск симуляции на 100 случайных строках из датасета
+- Таблица результатов с голосами каждой модели (IF / LOF / SVM / RF)
+- Цветовые бейджи типов атак
+
+### Packet Capture
+- Выбор сетевого интерфейса
+- Живой захват трафика через Scapy
+- WebSocket-стрим результатов в браузер
+- Таблица потоков: IP, порт, протокол, предикшн
+
+### Alerts
+- Пагинированная таблица всех алертов из БД
+- Фильтр по типу (Intrusion / Normal / All)
+- **Экспорт в CSV и PDF**
+
+### Models
+- Карточки 4 моделей с параметрами обучения
+- Бейджи SUPERVISED / UNSUPERVISED
+
+---
+
+## Запуск локально
+
+### Требования
+- Python 3.11+
+- Node.js 18+
+- Windows: [Npcap](https://npcap.com/) (для live capture)
+
+### 1. Клонировать репозиторий
+
+```bash
+git clone https://github.com/Dias3fewfe/diplloma-.git
+cd diplloma-
+```
+
+### 2. Установить зависимости Python
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Настроить переменные окружения
+
+```bash
+cp .env.example .env
+# Заполнить TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID (опционально)
+```
+
+### 4. Подготовить данные и обучить модели
+
+```bash
+# Положить CICIDS2017.csv в data/raw/
+python -m backend.pipeline.preprocess
+python -m backend.pipeline.train
+python -m backend.pipeline.train_classifier
+python -m backend.pipeline.evaluate
+```
+
+### 5. Запустить бэкенд
+
+```bash
+# Требует прав администратора для live capture
+uvicorn backend.main:app --reload --port 8000
+```
+
+### 6. Запустить фронтенд
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### 7. Открыть дашборд
+
+```
+http://localhost:5173
+```
+
+**Логин:** `admin` / `admin123`
+
+---
+
+## API эндпоинты
+
+| Метод | URL | Описание |
+|---|---|---|
+| `POST` | `/api/auth/login` | Получить JWT токен |
+| `GET` | `/api/auth/verify` | Проверить токен |
+| `POST` | `/api/predict` | Предсказание для одного вектора признаков |
+| `POST` | `/api/simulate` | Симуляция на 100 случайных строках |
+| `GET` | `/api/alerts` | Список алертов (с пагинацией и фильтром) |
+| `GET` | `/api/alerts/export/csv` | Экспорт алертов в CSV |
+| `GET` | `/api/alerts/export/pdf` | Экспорт алертов в PDF |
+| `GET` | `/api/stats` | Агрегированная статистика |
+| `GET` | `/api/health` | Проверка доступности API |
+| `GET` | `/api/notification-status` | Статус Telegram |
+| `POST` | `/api/capture/start` | Начать захват пакетов |
+| `POST` | `/api/capture/stop` | Остановить захват |
+| `GET` | `/api/capture/status` | Счётчики захвата |
+| `WS` | `/api/ws/live` | WebSocket стрим результатов |
+
+Полная интерактивная документация: `http://localhost:8000/docs`
+
+---
+
+## Настройка Telegram уведомлений
+
+1. Создать бота через [@BotFather](https://t.me/BotFather), получить токен
+2. Узнать свой `chat_id` через [@userinfobot](https://t.me/userinfobot)
+3. Добавить в `.env`:
+
+```env
+TELEGRAM_BOT_TOKEN=ваш_токен
+TELEGRAM_CHAT_ID=ваш_chat_id
+```
+
+Уведомление приходит при `confidence >= 75%`. Формат:
+
+```
+🚨 INTRUSION DETECTED
+Type: DDoS
+Confidence: 100%
+Source IP: 192.168.1.45
+Protocol: TCP
+Models: IF✓ LOF✓ SVM✓ RF✓
+Time: 2026-05-14 12:34:56
+```
+
+---
+
+## Автор
+
+**Dias Kadirhanov**  
+Международный университет информационных технологий (МУИТ)  
+Дипломная работа, 2026
