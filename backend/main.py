@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from backend.api.auth_routes import router_auth
 from backend.api.capture_routes import router_capture, set_main_loop, set_notifier
 from backend.api.routes import router
 from backend.config import API_HOST, API_PORT
@@ -41,6 +42,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(router_auth)
 app.include_router(router)
 app.include_router(router_capture)
 

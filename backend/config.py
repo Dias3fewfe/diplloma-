@@ -104,3 +104,11 @@ API_PORT = 8000
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 NOTIFY_CONFIDENCE_THRESHOLD = 0.75
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+SECRET_KEY = os.getenv("SECRET_KEY", "nids-secret-key-change-in-production")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+ACCESS_TOKEN_EXPIRE_HOURS = 24

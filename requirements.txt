@@ -10,3 +10,4 @@ scapy
 httpx
 python-dotenv
 fpdf2
+python-jose[cryptography]
