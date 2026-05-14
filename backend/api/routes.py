@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pandas as pd
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -380,9 +380,9 @@ def export_alerts_pdf(db: Session = Depends(get_db)) -> StreamingResponse:
     pdf.add_page()
 
     pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 8, "NIDS — Alert Export", ln=True, align="C")
+    pdf.cell(0, 8, "NIDS - Alert Export", ln=True, align="C")
     pdf.set_font("Helvetica", "", 8)
-    pdf.cell(0, 5, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC   |   Total: {len(alerts)} alerts", ln=True, align="C")
+    pdf.cell(0, 5, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC  |  Total: {len(alerts)} alerts", ln=True, align="C")
     pdf.ln(3)
 
     cols    = ["ID", "Timestamp", "Src IP", "Dst IP", "Proto", "Prediction", "Attack Type", "Conf", "IF", "LOF", "SVM", "RF"]
@@ -427,10 +427,9 @@ def export_alerts_pdf(db: Session = Depends(get_db)) -> StreamingResponse:
     for w in widths:
         pdf.cell(w, 1, "", border="T", fill=True)
 
-    buf = io.BytesIO(pdf.output())
     filename = f"nids_alerts_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
-    return StreamingResponse(
-        buf,
+    return Response(
+        content=bytes(pdf.output()),
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
