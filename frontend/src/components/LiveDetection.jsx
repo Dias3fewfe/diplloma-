@@ -50,7 +50,7 @@ export default function LiveDetection() {
             <span style={{ color: '#10b981', fontWeight: 500 }}>{result.normal_count} normal</span>
             <span style={{ color: '#64748b' }}>{(result.detection_rate * 100).toFixed(1)}% detection rate</span>
             <span style={{ color: '#64748b', fontSize: 12, fontFamily: 'monospace' }}>
-              IF {result.model_agreement?.isolation_forest} · LOF {result.model_agreement?.lof} · SVM {result.model_agreement?.svm}
+              IF {result.model_agreement?.isolation_forest} · LOF {result.model_agreement?.lof} · SVM {result.model_agreement?.svm}{result.model_agreement?.random_forest != null ? ` · RF ${result.model_agreement.random_forest}` : ''}
             </span>
           </div>
         )}
@@ -69,7 +69,7 @@ export default function LiveDetection() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
-                  {['#', 'Label', 'Prediction', 'Confidence', 'IF', 'LOF', 'SVM', 'Score'].map((h, i) => (
+                  {['#', 'Label', 'Prediction', 'Confidence', 'IF', 'LOF', 'SVM', 'RF', 'Score'].map((h, i) => (
                     <th key={h} style={{ ...TH, textAlign: i >= 4 ? 'center' : 'left', width: i === 0 ? 40 : 'auto' }}>{h}</th>
                   ))}
                 </tr>
@@ -98,7 +98,8 @@ export default function LiveDetection() {
                       <td style={{ padding: '7px 12px', textAlign: 'center' }}><Dot on={row.model_votes.isolation_forest} /></td>
                       <td style={{ padding: '7px 12px', textAlign: 'center' }}><Dot on={row.model_votes.lof} /></td>
                       <td style={{ padding: '7px 12px', textAlign: 'center' }}><Dot on={row.model_votes.svm} /></td>
-                      <td style={{ padding: '7px 12px', textAlign: 'center', color: '#64748b', fontFamily: 'monospace' }}>{votes}/3</td>
+                      <td style={{ padding: '7px 12px', textAlign: 'center' }}><Dot on={row.model_votes.random_forest} /></td>
+                      <td style={{ padding: '7px 12px', textAlign: 'center', color: '#64748b', fontFamily: 'monospace' }}>{votes}/{Object.keys(row.model_votes).length}</td>
                     </tr>
                   )
                 })}

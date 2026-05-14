@@ -21,10 +21,12 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from backend.config import (
+    ATTACK_CLASSIFIER_PATH,
     ENSEMBLE_THRESHOLD,
     ISO_FOREST_PATH,
     LOF_PATH,
     OCSVM_PATH,
+    RF_PATH,
     SCALER_PATH,
 )
 
@@ -56,6 +58,9 @@ def _load_models() -> dict:
                 "Run train.py (and preprocess.py for the scaler) first."
             )
         loaded[name] = joblib.load(path)
+    # Random Forest is optional — loaded automatically once trained
+    if RF_PATH.exists():
+        loaded["random_forest"] = joblib.load(RF_PATH)
     return loaded
 
 
@@ -107,15 +112,20 @@ def _run_ensemble(X_scaled: pd.DataFrame) -> list[dict[str, Any]]:
     """
     models = _load_models()
 
-    votes = {
-        "isolation_forest": _sklearn_to_vote(
-            models["isolation_forest"].predict(X_scaled)
-        ),
-        "lof": _sklearn_to_vote(models["lof"].predict(X_scaled)),
-        "svm": _sklearn_to_vote(models["svm"].predict(X_scaled)),
-    }
+    votes = {}
+    for name, model in models.items():
+        if name == "scaler":
+            continue
+        raw = model.predict(X_scaled)
+        # Supervised classifiers (e.g. RandomForest) output 0/1 directly;
+        # outlier detectors output +1/-1 which need conversion.
+        if hasattr(model, "classes_"):
+            votes[name] = raw.astype(int)
+        else:
+            votes[name] = _sklearn_to_vote(raw)
 
-    vote_matrix = np.stack(list(votes.values()), axis=1)  # (n, 3)
+    vote_matrix = np.stack(list(votes.values()), axis=1)  # (n, n_models)
+    n_models = vote_matrix.shape[1]
     vote_sums = vote_matrix.sum(axis=1)
 
     results = []
@@ -124,7 +134,7 @@ def _run_ensemble(X_scaled: pd.DataFrame) -> list[dict[str, Any]]:
         results.append({
             "prediction": "INTRUSION" if vote_sum >= ENSEMBLE_THRESHOLD else "NORMAL",
             "model_votes": {name: int(arr[i]) for name, arr in votes.items()},
-            "attack_confidence": round(vote_sum / 3, 4),
+            "attack_confidence": round(vote_sum / n_models, 4),
             "vote_sum": vote_sum,
         })
     return results
@@ -133,6 +143,71 @@ def _run_ensemble(X_scaled: pd.DataFrame) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+@lru_cache(maxsize=1)
+def _load_attack_classifier():
+    """Load the multiclass attack-type classifier from disk (cached).
+
+    Returns:
+        Fitted RandomForestClassifier, or None if not yet trained.
+    """
+    if not ATTACK_CLASSIFIER_PATH.exists():
+        return None
+    return joblib.load(ATTACK_CLASSIFIER_PATH)
+
+
+def classify_attack_type(raw_features: dict[str, float]) -> dict[str, Any]:
+    """Classify the specific attack type for a raw feature vector.
+
+    Uses the multiclass RandomForest trained by train_classifier.py.
+    Returns "Unknown" gracefully if the classifier has not been trained yet.
+
+    Args:
+        raw_features: Raw (unscaled) feature dict — same format as predict_single().
+
+    Returns:
+        Dict with keys:
+            label      : str  — predicted class name (e.g. "DDoS", "PortScan", "BENIGN").
+            confidence : float — probability of the predicted class (0.0–1.0).
+    """
+    model = _load_attack_classifier()
+    if model is None:
+        return {"label": "Unknown", "confidence": 0.0}
+
+    feature_names = get_feature_names()
+    if any(f not in raw_features for f in feature_names):
+        return {"label": "Unknown", "confidence": 0.0}
+
+    row = pd.DataFrame([[raw_features[f] for f in feature_names]], columns=feature_names)
+    label = str(model.predict(row)[0])
+    confidence = float(model.predict_proba(row)[0].max())
+    return {"label": label, "confidence": round(confidence, 4)}
+
+
+def classify_attack_type_batch(X: pd.DataFrame) -> list[dict[str, Any]]:
+    """Classify attack types for a batch of rows from cleaned.csv.
+
+    Args:
+        X: DataFrame whose columns match those the classifier was trained on.
+           Label column must already be removed.
+
+    Returns:
+        List of dicts with keys: label (str), confidence (float).
+        Each entry corresponds to one row of X.
+    """
+    model = _load_attack_classifier()
+    if model is None:
+        return [{"label": "Unknown", "confidence": 0.0}] * len(X)
+
+    feature_names = list(model.feature_names_in_)
+    X_aligned = X.reindex(columns=feature_names, fill_value=0.0)
+    labels = model.predict(X_aligned)
+    probas = model.predict_proba(X_aligned)
+    return [
+        {"label": str(labels[i]), "confidence": round(float(probas[i].max()), 4)}
+        for i in range(len(X_aligned))
+    ]
+
 
 def predict_single(raw_features: dict[str, float]) -> dict[str, Any]:
     """Scale a single raw feature dict and return the ensemble prediction.

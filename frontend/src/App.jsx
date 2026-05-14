@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import Overview from './components/Overview'
 import LiveDetection from './components/LiveDetection'
+import LiveCapturePanel from './components/LiveCapturePanel'
 import AlertsTable from './components/AlertsTable'
 import ModelsPanel from './components/ModelsPanel'
 
-const TABS = ['Overview', 'Live Detection', 'Alerts', 'Models']
+const TABS = ['Overview', 'Live Detection', 'Packet Capture', 'Alerts', 'Models']
 
 export default function App() {
   const [tab, setTab] = useState('Overview')
@@ -33,7 +34,7 @@ export default function App() {
               LIVE
             </span>
             <span style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>
-              CICIDS2017 · Ensemble: IF + LOF + OC-SVM
+              CICIDS2017 · Ensemble: IF + LOF + OC-SVM + RF
             </span>
           </div>
         </div>
@@ -63,10 +64,11 @@ export default function App() {
       </header>
 
       <main style={{ padding: '20px 24px', maxWidth: 1440, margin: '0 auto' }}>
-        {tab === 'Overview'       && <Overview />}
-        {tab === 'Live Detection' && <LiveDetection />}
-        {tab === 'Alerts'         && <AlertsTable />}
-        {tab === 'Models'         && <ModelsPanel />}
+        {tab === 'Overview'        && <Overview />}
+        {tab === 'Live Detection'  && <LiveDetection />}
+        {tab === 'Packet Capture'  && <LiveCapturePanel />}
+        {tab === 'Alerts'          && <AlertsTable />}
+        {tab === 'Models'          && <ModelsPanel />}
       </main>
     </div>
   )

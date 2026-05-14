@@ -18,7 +18,8 @@ project/
 │   ├── models/              # ML model files (.pkl)
 │   ├── pipeline/
 │   │   ├── preprocess.py    # Data cleaning & feature engineering
-│   │   ├── train.py         # Train all 3 models + ensemble
+│   │   ├── train.py         # Train 4 ensemble models (IF/LOF/SVM/RF binary)
+│   │   ├── train_classifier.py  # Train multiclass attack-type classifier
 │   │   └── predict.py       # Inference logic
 │   ├── api/
 │   │   ├── routes.py        # All API endpoints
@@ -48,7 +49,7 @@ project/
 - API responses always return JSON with {status, data, error}
 - Keep frontend components small, max 150 lines per file
 
-## Current Status — Updated 20.04.2026
+## Current Status — Updated 14.05.2026 (4)
 
 ### Completed ✅
 - [x] Project structure created (backend/ frontend/ data/)
@@ -62,11 +63,72 @@ project/
 - [x] backend/api/routes.py — /predict /simulate /alerts /stats /health
 - [x] backend/main.py — FastAPI + CORS
 - [x] frontend — React + Vite + Recharts + Tailwind
-- [x] All 4 tabs working: Overview, Live Detection, Alerts, Models
+- [x] All 5 tabs working: Overview, Live Detection, Packet Capture, Alerts, Models
 - [x] UI redesigned: professional dark theme, no emojis, Grafana-style
+- [x] backend/pipeline/capture.py — live packet capture via scapy
+      - FlowRecord dataclass: накапливает fwd/bwd статистику пакетов
+      - extract_features(): вычисляет ~78 CICIDS2017-совместимых фич из реальных пакетов
+      - FlowCapture: фоновый снифер, группирует пакеты в 5-tuple потоки,
+        завершает поток по TCP FIN/RST или таймауту (30 сек), вызывает predict_single()
+- [x] backend/api/capture_routes.py — REST + WebSocket для живого захвата
+      - POST /api/capture/start — запуск захвата на интерфейсе
+      - POST /api/capture/stop — остановка
+      - GET  /api/capture/status — счётчики (packets_seen, flows_finalized, intrusions)
+      - GET  /api/capture/interfaces — список NIC
+      - WS   /api/ws/live — стрим результатов в браузер
+- [x] frontend/src/components/LiveCapturePanel.jsx — таб "Packet Capture"
+      - Dropdown выбора сетевого интерфейса
+      - Start/Stop захвата, WebSocket-статус индикатор
+      - Живая таблица потоков: IP, порт, протокол, байты, предикшн, голоса IF/LOF/SVM
+- [x] requirements.txt — добавлен scapy
+- [x] backend/pipeline/train.py — добавлен 4-й supervised Random Forest (150k строк, stratified по всем классам)
+      - train_random_forest(): загружает cleaned.csv, пропорциональная стратифицированная выборка,
+        бинарные метки (0=BENIGN, 1=attack), class_weight='balanced'
+      - run_training() теперь обучает и сохраняет 4 модели
+- [x] backend/pipeline/predict.py — RF интегрирован в ансамбль как 4-й голос
+      - _load_models(): RF загружается опционально (если random_forest.pkl существует)
+      - _run_ensemble(): hasattr(model, 'classes_') определяет supervised vs outlier детектор
+      - attack_confidence теперь делится на n_models динамически (3 или 4)
+- [x] backend/pipeline/evaluate.py — RF учитывается в отчёте оценки
+- [x] frontend: ModelsPanel, LiveDetection, App обновлены для 4 моделей
+      - ModelsPanel: 4-колоночная сетка, бейджи SUPERVISED/UNSUPERVISED
+      - LiveDetection: колонка RF, динамический счёт голосов
+      - App: заголовок обновлён "IF + LOF + OC-SVM + RF"
+- [x] Классификация типа атаки (multiclass):
+      - backend/pipeline/train_classifier.py — RF(200 деревьев), multiclass по Label,
+        stratified 150k строк, сохраняет attack_classifier.pkl
+      - backend/pipeline/predict.py — classify_attack_type(raw_features) и classify_attack_type_batch(X)
+        опциональная загрузка (_load_attack_classifier с lru_cache), fallback="Unknown"
+      - backend/api/schemas.py — attack_type добавлен в PredictResponse, SimulateRow, AlertOut;
+        attack_type_breakdown в StatsResponse; ModelVotes расширен random_forest
+      - backend/db/database.py — колонка attack_type в Alert; init_db() делает ALTER TABLE миграцию
+      - backend/api/routes.py — /predict и /simulate вызывают classify_attack_type[_batch],
+        сохраняют attack_type в БД; /stats возвращает attack_type_breakdown (GROUP BY)
+      - frontend/AlertsTable.jsx — колонка "Attack Type" с цветными бейджами AttackBadge
+        (DDoS=красный, PortScan=жёлтый, BruteForce=оранжевый, Bot=фиолетовый, и др.)
+      - frontend/Overview.jsx — BarChart топ-5 типов атак из /api/stats
+- [x] Telegram уведомления при обнаружении атаки:
+      - backend/notifications.py — класс TelegramNotifier
+          is_configured(): bool, send_alert(alert_data) async через httpx
+          Формат Markdown: тип атаки, уверенность, IP, протокол, голоса моделей, время
+          Отправляет только если confidence >= NOTIFY_CONFIDENCE_THRESHOLD (0.75)
+          При ошибке сети — logging.warning, никогда не кидает исключение
+      - backend/config.py — load_dotenv(), TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+        NOTIFY_CONFIDENCE_THRESHOLD = 0.75
+      - backend/main.py — TelegramNotifier инициализируется при старте,
+        хранится в app.state.notifier, передаётся в capture_routes через set_notifier()
+      - backend/api/routes.py — /predict и /simulate используют BackgroundTasks
+        для отправки уведомлений (не блокируют API ответ);
+        новый GET /api/notification-status → {"telegram_configured": bool}
+      - backend/api/capture_routes.py — set_notifier(), уведомление в _on_flow_complete
+        через asyncio.run_coroutine_threadsafe из фонового потока
+      - frontend/Overview.jsx — индикатор статуса Telegram (зелёная/серая точка)
+      - requirements.txt — добавлены httpx, python-dotenv
+      - .env — создан с токеном и chat_id (в .gitignore, не коммитить)
+      - .env.example — шаблон без реальных значений
 
 ### How to Run
-Terminal 1 (backend):
+Terminal 1 (backend — требует прав администратора для захвата пакетов):
 uvicorn backend.main:app --reload --port 8000
 
 Terminal 2 (frontend):
@@ -75,6 +137,25 @@ cd frontend && npm run dev
 Dashboard: http://localhost:5173
 API docs: http://localhost:8000/docs
 
+### Live Packet Capture — требования
+- pip install scapy
+- Windows: установить Npcap с https://npcap.com/
+- Запускать бэкенд от имени Администратора (Windows) или sudo (Linux)
+
+### Telegram — настройка
+1. Создать .env в корне проекта (уже создан)
+2. pip install httpx python-dotenv (или pip install -r requirements.txt)
+3. Перезапустить uvicorn — в консоли появится "Telegram notifier: configured"
+
 ### Remaining
-- [ ] README.md for thesis
-- [ ] docs/ folder with thesis documentation in Russian
+- [x] Запустить train.py → random_forest.pkl обучен (10MB)
+- [x] Запустить train_classifier.py → attack_classifier.pkl обучен (40MB)
+- [x] Запустить evaluate.py — F1=0.784 (INTRUSION), macro avg F1=0.862, accuracy=90.6%
+- [x] Экспорт алертов в PDF/CSV:
+      - backend/api/routes.py — GET /api/alerts/export/csv и /api/alerts/export/pdf
+        CSV: все поля + голоса IF/LOF/SVM/RF, filename с timestamp
+        PDF: таблица A4 landscape через fpdf2, тёмная тема, автопагинация
+      - frontend/AlertsTable.jsx — кнопки "Export CSV" (зелёная) и "Export PDF" (синяя)
+      - requirements.txt — добавлен fpdf2
+- [ ] README.md для диплома
+- [ ] docs/ папка с документацией на русском

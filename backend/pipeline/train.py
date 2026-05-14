@@ -20,7 +20,7 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
-from sklearn.ensemble import IsolationForest
+from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import OneClassSVM
 
@@ -38,6 +38,9 @@ from backend.config import (
     MODELS_DIR,
     OCSVM_PARAMS,
     OCSVM_PATH,
+    RF_PARAMS,
+    RF_PATH,
+    RF_TRAIN_SAMPLE,
     SVM_TRAIN_SAMPLE,
 )
 
@@ -63,7 +66,7 @@ def load_benign_sample(path: Path = CLEANED_CSV) -> pd.DataFrame:
     Raises:
         FileNotFoundError: If cleaned.csv is missing.
     """
-    print(f"[1/4] Loading cleaned data from: {path}")
+    print(f"[1/5] Loading cleaned data from: {path}")
     if not path.exists():
         raise FileNotFoundError(
             f"Cleaned dataset not found at {path}. "
@@ -96,7 +99,7 @@ def train_isolation_forest(X: pd.DataFrame) -> IsolationForest:
     Returns:
         Fitted IsolationForest instance.
     """
-    print(f"\n[2/4] Training Isolation Forest  (n={len(X):,}) ...")
+    print(f"\n[2/5] Training Isolation Forest  (n={len(X):,}) ...")
     print(f"      Params : {ISOLATION_FOREST_PARAMS}")
     t0 = time.time()
 
@@ -123,7 +126,7 @@ def train_lof(X: pd.DataFrame) -> LocalOutlierFactor:
     """
     n = min(LOF_TRAIN_SAMPLE, len(X))
     X_lof = X.iloc[:n]
-    print(f"\n[3/4] Training Local Outlier Factor  (n={len(X_lof):,}) ...")
+    print(f"\n[3/5] Training Local Outlier Factor  (n={len(X_lof):,}) ...")
     print(f"      Params : {LOF_PARAMS}")
     t0 = time.time()
 
@@ -149,13 +152,62 @@ def train_ocsvm(X: pd.DataFrame) -> OneClassSVM:
     """
     n = min(SVM_TRAIN_SAMPLE, len(X))
     X_svm = X.iloc[:n]
-    print(f"\n[4/4] Training One-Class SVM  (n={len(X_svm):,}) ...")
+    print(f"\n[4/5] Training One-Class SVM  (n={len(X_svm):,}) ...")
     print(f"      Params : {OCSVM_PARAMS}")
     t0 = time.time()
 
     model = OneClassSVM(**OCSVM_PARAMS)
     model.fit(X_svm)
 
+    print(f"      Done in {time.time() - t0:.1f}s")
+    return model
+
+
+def train_random_forest(path: Path = CLEANED_CSV) -> RandomForestClassifier:
+    """Train a supervised Random Forest on all labeled CICIDS2017 data.
+
+    Unlike the three unsupervised models, Random Forest is trained on both
+    BENIGN and attack rows, giving it explicit knowledge of attack patterns.
+    Uses proportional stratified sampling to preserve class distribution.
+
+    Args:
+        path: Path to cleaned.csv produced by preprocess.py.
+
+    Returns:
+        Fitted RandomForestClassifier instance.
+
+    Raises:
+        FileNotFoundError: If cleaned.csv is missing.
+    """
+    print(f"\n[5/5] Training Random Forest  (supervised, n<={RF_TRAIN_SAMPLE:,}) ...")
+    print(f"      Params : {RF_PARAMS}")
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Cleaned dataset not found at {path}. "
+            "Run backend/pipeline/preprocess.py first."
+        )
+
+    df = pd.read_csv(path, low_memory=False)
+    n = min(RF_TRAIN_SAMPLE, len(df))
+    frac = n / len(df)
+
+    # Stratified sample: each class contributes proportionally
+    groups = []
+    for label, group in df.groupby(LABEL_COLUMN):
+        k = max(1, int(frac * len(group)))
+        groups.append(group.sample(n=min(k, len(group)), random_state=42))
+    sample = pd.concat(groups).sample(frac=1, random_state=42)
+
+    y = (sample[LABEL_COLUMN] != BENIGN_LABEL).astype(int)
+    X = sample.drop(columns=[LABEL_COLUMN])
+
+    print(f"      Sample size : {len(X):,}  "
+          f"(BENIGN={int((y == 0).sum()):,}, Attack={int((y == 1).sum()):,})")
+
+    t0 = time.time()
+    model = RandomForestClassifier(**RF_PARAMS)
+    model.fit(X, y)
     print(f"      Done in {time.time() - t0:.1f}s")
     return model
 
@@ -204,17 +256,19 @@ def run_training() -> dict:
     iso = train_isolation_forest(X_master)
     lof = train_lof(X_master)
     svm = train_ocsvm(X_master)
+    rf  = train_random_forest()
 
     print("\n[Saving models]")
     save_model(iso, ISO_FOREST_PATH, "Isolation Forest")
     save_model(lof, LOF_PATH, "Local Outlier Factor")
     save_model(svm, OCSVM_PATH, "One-Class SVM")
+    save_model(rf,  RF_PATH,   "Random Forest")
 
     print("\n" + "=" * 60)
-    print("  Training complete.  All 3 models saved.")
+    print("  Training complete.  All 4 models saved.")
     print("=" * 60)
 
-    return {"isolation_forest": iso, "lof": lof, "svm": svm}
+    return {"isolation_forest": iso, "lof": lof, "svm": svm, "random_forest": rf}
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Cell } from 'recharts'
 import axios from 'axios'
 
 const API = `${import.meta.env.VITE_API_URL}/api`
@@ -32,8 +32,9 @@ function ModelBar({ name, value, max }) {
 }
 
 export default function Overview() {
-  const [stats, setStats]   = useState(null)
-  const [history, setHistory] = useState([])
+  const [stats, setStats]         = useState(null)
+  const [history, setHistory]     = useState([])
+  const [tgActive, setTgActive]   = useState(null)
   const n = useRef(0)
 
   useEffect(() => {
@@ -52,6 +53,12 @@ export default function Overview() {
     return () => clearInterval(id)
   }, [])
 
+  useEffect(() => {
+    axios.get(`${API}/notification-status`)
+      .then(r => { if (r.data.status === 'ok') setTgActive(r.data.data.telegram_configured) })
+      .catch(() => {})
+  }, [])
+
   if (!stats) return <p style={{ color: '#64748b', fontSize: 13, marginTop: 20 }}>Connecting to {API}…</p>
 
   const mv = stats.model_vote_totals
@@ -60,25 +67,32 @@ export default function Overview() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {tgActive != null && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: tgActive ? '#10b981' : '#64748b' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: tgActive ? '#10b981' : '#64748b', flexShrink: 0 }} />
+          {tgActive ? 'Telegram notifications active' : 'Telegram not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env'}
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
         <StatCard lbl="Total Intrusions"  value={stats.intrusion_count.toLocaleString()} sub="alerts in database"         color="#ef4444" />
         <StatCard lbl="Detection Rate"    value={`${(stats.detection_rate * 100).toFixed(1)}%`} sub="intrusions / all alerts"   color="#3b82f6" />
         <StatCard lbl="Leading Detector"  value={top}                                     sub="most anomaly votes cast" />
-        <StatCard lbl="Ensemble Status"   value="3 / 3"                                   sub="models operational"            color="#10b981" />
+        <StatCard lbl="Ensemble Status"   value="4 / 4"                                   sub="models operational"            color="#10b981" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={card}>
           <span style={label}>Anomaly votes by model</span>
           <div style={{ marginTop: 14 }}>
-            <ModelBar name="Isolation Forest"    value={mv.isolation_forest} max={maxV} />
-            <ModelBar name="Local Outlier Factor" value={mv.lof}              max={maxV} />
-            <ModelBar name="One-Class SVM"        value={mv.svm}              max={maxV} />
+            <ModelBar name="Isolation Forest"    value={mv.isolation_forest ?? 0} max={maxV} />
+            <ModelBar name="Local Outlier Factor" value={mv.lof ?? 0}              max={maxV} />
+            <ModelBar name="One-Class SVM"        value={mv.svm ?? 0}              max={maxV} />
+            {mv.random_forest != null && <ModelBar name="Random Forest" value={mv.random_forest} max={maxV} />}
           </div>
-          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #2a2d3a', display: 'flex', gap: 20 }}>
-            {[['IF', mv.isolation_forest], ['LOF', mv.lof], ['SVM', mv.svm]].map(([k, v]) => (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #2a2d3a', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+            {Object.entries(mv).map(([k, v]) => (
               <div key={k}>
-                <span style={{ ...label, marginBottom: 2 }}>{k}</span>
+                <span style={{ ...label, marginBottom: 2 }}>{k.replace(/_/g,' ').toUpperCase()}</span>
                 <span style={{ fontSize: 20, fontWeight: 600, color: '#e2e8f0' }}>{v}</span>
               </div>
             ))}
@@ -107,6 +121,28 @@ export default function Overview() {
           }
         </div>
       </div>
+
+      {stats.attack_type_breakdown && Object.keys(stats.attack_type_breakdown).length > 0 && (() => {
+        const chartData = Object.entries(stats.attack_type_breakdown)
+          .sort(([, a], [, b]) => b - a).slice(0, 5)
+          .map(([name, count]) => ({ name, count }))
+        const COLORS = ['#ef4444', '#f97316', '#eab308', '#a855f7', '#3b82f6']
+        return (
+          <div style={card}>
+            <span style={label}>Top attack types detected</span>
+            <ResponsiveContainer width="100%" height={140}>
+              <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 20, bottom: 0, left: 96 }}>
+                <XAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} tickLine={false} axisLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} width={96} />
+                <Tooltip {...TIP} formatter={v => [v, 'alerts']} />
+                <Bar dataKey="count" radius={2} maxBarSize={14}>
+                  {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )
+      })()}
     </div>
   )
 }

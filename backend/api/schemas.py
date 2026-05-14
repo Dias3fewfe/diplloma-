@@ -63,6 +63,9 @@ class ModelVotes(BaseModel):
     isolation_forest: int
     lof: int
     svm: int
+    random_forest: int = 0
+
+    model_config = {"extra": "allow"}
 
 
 class PredictResponse(BaseModel):
@@ -73,9 +76,13 @@ class PredictResponse(BaseModel):
     attack_confidence: float = Field(
         ..., description="Fraction of models that voted anomaly (0.0–1.0)."
     )
-    vote_sum: int = Field(..., description="Number of models that voted anomaly (0–3).")
+    vote_sum: int = Field(..., description="Number of models that voted anomaly (0–4).")
     alert_id: int | None = Field(
         None, description="DB row id if the prediction was saved as an alert."
+    )
+    attack_type: str = Field(
+        default="Unknown",
+        description="Predicted attack category (e.g. DDoS, PortScan). 'BENIGN' if normal.",
     )
 
 
@@ -91,6 +98,7 @@ class SimulateRow(BaseModel):
     prediction: str
     model_votes: dict[str, int]
     attack_confidence: float
+    attack_type: str = "BENIGN"
 
 
 class SimulateSummary(BaseModel):
@@ -123,6 +131,7 @@ class AlertOut(BaseModel):
     prediction: str
     model_votes: dict[str, int]
     attack_confidence: float
+    attack_type: str = "Unknown"
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -142,4 +151,8 @@ class StatsResponse(BaseModel):
     model_vote_totals: dict[str, int] = Field(
         ...,
         description="Total anomaly votes cast by each model across all stored alerts.",
+    )
+    attack_type_breakdown: dict[str, int] = Field(
+        default_factory=dict,
+        description="Count of intrusion alerts per attack type.",
     )

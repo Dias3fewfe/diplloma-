@@ -4,6 +4,7 @@ Run with:
     uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 """
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -12,9 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from backend.api.capture_routes import router_capture, set_main_loop, set_notifier
 from backend.api.routes import router
 from backend.config import API_HOST, API_PORT
-from backend.db.database import init_db
+from backend.db.database import SessionLocal, init_db
+from backend.notifications import TelegramNotifier
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -39,6 +42,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(router_capture)
 
 
 # ---------------------------------------------------------------------------
@@ -46,10 +50,20 @@ app.include_router(router)
 # ---------------------------------------------------------------------------
 
 @app.on_event("startup")
-def on_startup() -> None:
-    """Initialise the SQLite database on first start."""
+async def on_startup() -> None:
+    """Initialise the SQLite database, event loop reference, and Telegram notifier."""
+    import backend.api.capture_routes as cr
     init_db()
+    cr._db_session_factory = SessionLocal
+    set_main_loop(asyncio.get_event_loop())
+
+    notifier = TelegramNotifier()
+    app.state.notifier = notifier
+    set_notifier(notifier)
+
+    status = "configured" if notifier.is_configured() else "not configured (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env)"
     print("Database initialised.")
+    print(f"Telegram notifier: {status}")
 
 
 # ---------------------------------------------------------------------------

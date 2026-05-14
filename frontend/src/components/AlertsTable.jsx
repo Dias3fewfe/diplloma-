@@ -14,7 +14,7 @@ function PredBadge({ v }) {
 }
 
 function VoteChips({ votes }) {
-  const map = { isolation_forest: 'IF', lof: 'LOF', svm: 'SVM' }
+  const map = { isolation_forest: 'IF', lof: 'LOF', svm: 'SVM', random_forest: 'RF' }
   return (
     <span style={{ display: 'flex', gap: 4 }}>
       {Object.entries(votes).map(([k, v]) => (
@@ -22,6 +22,27 @@ function VoteChips({ votes }) {
           {map[k] ?? k}
         </span>
       ))}
+    </span>
+  )
+}
+
+const ATTACK_PALETTE = {
+  DDoS:          { bg: 'rgba(239,68,68,0.15)',   color: '#fca5a5', border: '#7f1d1d' },
+  PortScan:      { bg: 'rgba(234,179,8,0.15)',   color: '#fde047', border: '#713f12' },
+  'Brute Force': { bg: 'rgba(249,115,22,0.15)',  color: '#fdba74', border: '#7c2d12' },
+  Bot:           { bg: 'rgba(168,85,247,0.15)',  color: '#d8b4fe', border: '#581c87' },
+  DoS:           { bg: 'rgba(239,68,68,0.12)',   color: '#fca5a5', border: '#7f1d1d' },
+  Infiltration:  { bg: 'rgba(20,184,166,0.15)',  color: '#5eead4', border: '#134e4a' },
+  Heartbleed:    { bg: 'rgba(239,68,68,0.20)',   color: '#f87171', border: '#991b1b' },
+  BENIGN:        { bg: 'transparent',            color: '#64748b', border: '#2a2d3a' },
+}
+
+function AttackBadge({ type }) {
+  const t = type ?? 'Unknown'
+  const s = ATTACK_PALETTE[t] ?? { bg: 'rgba(100,116,139,0.12)', color: '#94a3b8', border: '#2a2d3a' }
+  return (
+    <span style={{ fontSize: 10, fontWeight: 500, padding: '1px 6px', borderRadius: 2, backgroundColor: s.bg, color: s.color, border: `1px solid ${s.border}`, fontFamily: 'monospace', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+      {t}
     </span>
   )
 }
@@ -63,6 +84,8 @@ export default function AlertsTable() {
             }}>{lbl}</button>
           ))}
           <button onClick={fetch} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 3, backgroundColor: '#1a1d27', color: '#64748b', border: '1px solid #2a2d3a', cursor: 'pointer' }}>Refresh</button>
+          <a href={`${API}/alerts/export/csv`} download style={{ fontSize: 12, padding: '5px 10px', borderRadius: 3, backgroundColor: '#1a1d27', color: '#10b981', border: '1px solid #064e3b', cursor: 'pointer', textDecoration: 'none' }}>Export CSV</a>
+          <a href={`${API}/alerts/export/pdf`} download style={{ fontSize: 12, padding: '5px 10px', borderRadius: 3, backgroundColor: '#1a1d27', color: '#3b82f6', border: '1px solid #1e3a5f', cursor: 'pointer', textDecoration: 'none' }}>Export PDF</a>
         </div>
       </div>
 
@@ -70,14 +93,14 @@ export default function AlertsTable() {
         <div style={{ overflowX: 'auto', maxHeight: '64vh', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr>{['Timestamp', 'Source IP', 'Destination IP', 'Proto', 'Prediction', 'Confidence', 'Models Voted'].map(h => (
+              <tr>{['Timestamp', 'Source IP', 'Destination IP', 'Proto', 'Prediction', 'Attack Type', 'Confidence', 'Models Voted'].map(h => (
                 <th key={h} style={TH_STYLE}>{h}</th>
               ))}</tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={7} style={{ padding: '20px 12px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>Loading…</td></tr>}
+              {loading && <tr><td colSpan={8} style={{ padding: '20px 12px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>Loading…</td></tr>}
               {!loading && data.alerts.length === 0 && (
-                <tr><td colSpan={7} style={{ padding: '32px 12px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>No alerts — run a simulation first.</td></tr>
+                <tr><td colSpan={8} style={{ padding: '32px 12px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>No alerts — run a simulation first.</td></tr>
               )}
               {!loading && data.alerts.map(a => (
                 <tr key={a.id} style={{ borderBottom: '1px solid #1e2130', backgroundColor: a.prediction === 'INTRUSION' ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
@@ -86,6 +109,7 @@ export default function AlertsTable() {
                   <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: '#94a3b8' }}>{a.destination_ip}</td>
                   <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: '#64748b', textTransform: 'uppercase', fontSize: 11 }}>{a.protocol}</td>
                   <td style={{ padding: '7px 12px' }}><PredBadge v={a.prediction} /></td>
+                  <td style={{ padding: '7px 12px' }}><AttackBadge type={a.attack_type} /></td>
                   <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: '#64748b' }}>{(a.attack_confidence * 100).toFixed(0)}%</td>
                   <td style={{ padding: '7px 12px' }}><VoteChips votes={a.model_votes} /></td>
                 </tr>

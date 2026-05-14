@@ -6,3 +6,7 @@ numpy
 joblib
 sqlalchemy
 python-multipart
+scapy
+httpx
+python-dotenv
+fpdf2

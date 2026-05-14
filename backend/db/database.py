@@ -20,6 +20,7 @@ from sqlalchemy import (
     Integer,
     String,
     create_engine,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -79,6 +80,7 @@ class Alert(Base):
     prediction = Column(String(16), nullable=False)
     model_votes = Column(JSON, nullable=False)
     attack_confidence = Column(Float, nullable=False)
+    attack_type = Column(String(64), nullable=True, default="Unknown")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -87,8 +89,19 @@ class Alert(Base):
 # ---------------------------------------------------------------------------
 
 def init_db() -> None:
-    """Create all tables in the SQLite database if they do not already exist."""
+    """Create all tables in the SQLite database if they do not already exist.
+
+    Also runs an idempotent migration to add attack_type column to existing DBs.
+    """
     Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(
+                "ALTER TABLE alerts ADD COLUMN attack_type VARCHAR(64) DEFAULT 'Unknown'"
+            ))
+            conn.commit()
+        except Exception:
+            pass  # Column already exists — safe to ignore
 
 
 def get_db():

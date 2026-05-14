@@ -34,6 +34,7 @@ from backend.config import (
     LOF_PATH,
     MODELS_DIR,
     OCSVM_PATH,
+    RF_PATH,
     TEST_SAMPLE_SIZE,
 )
 
@@ -53,20 +54,25 @@ def load_models() -> dict:
     Raises:
         FileNotFoundError: If any model file is missing.
     """
-    paths = {
+    required = {
         "isolation_forest": ISO_FOREST_PATH,
         "lof": LOF_PATH,
         "svm": OCSVM_PATH,
     }
     models = {}
     print("[1/3] Loading trained models ...")
-    for name, path in paths.items():
+    for name, path in required.items():
         if not path.exists():
             raise FileNotFoundError(
                 f"Model not found: {path}. Run backend/pipeline/train.py first."
             )
         models[name] = joblib.load(path)
         print(f"      Loaded {name:25s} <- {path.name}")
+    if RF_PATH.exists():
+        models["random_forest"] = joblib.load(RF_PATH)
+        print(f"      Loaded {'random_forest':25s} <- {RF_PATH.name}")
+    else:
+        print("      random_forest              <- not found, skipping")
     return models
 
 
@@ -153,7 +159,11 @@ def predict_all(
     votes = {}
     for name, model in models.items():
         raw = model.predict(X)
-        votes[name] = sklearn_to_anomaly_vote(raw)
+        # Supervised classifiers output 0/1; outlier detectors output +1/-1.
+        if hasattr(model, "classes_"):
+            votes[name] = raw.astype(int)
+        else:
+            votes[name] = sklearn_to_anomaly_vote(raw)
         anomaly_count = votes[name].sum()
         print(f"      {name:25s}: {anomaly_count:,} anomalies flagged "
               f"({anomaly_count/len(X)*100:.1f}%)")

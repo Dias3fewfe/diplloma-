@@ -1,6 +1,11 @@
 """Central configuration: all file paths and model hyperparameters."""
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Root paths
@@ -26,6 +31,7 @@ SCALER_PATH = MODELS_DIR / "scaler.pkl"
 ISO_FOREST_PATH = MODELS_DIR / "isolation_forest.pkl"
 LOF_PATH = MODELS_DIR / "lof.pkl"
 OCSVM_PATH = MODELS_DIR / "svm.pkl"
+ATTACK_CLASSIFIER_PATH = MODELS_DIR / "attack_classifier.pkl"
 
 # ---------------------------------------------------------------------------
 # Database
@@ -69,13 +75,32 @@ OCSVM_PARAMS = {
     "gamma": "scale",
 }
 
+RF_TRAIN_SAMPLE = 150_000  # total rows for RF (stratified across all labels)
+
+RF_PARAMS = {
+    "n_estimators": 100,
+    "class_weight": "balanced",
+    "max_features": "sqrt",
+    "random_state": 42,
+    "n_jobs": -1,
+}
+
+RF_PATH = MODELS_DIR / "random_forest.pkl"
+
 # ---------------------------------------------------------------------------
 # Ensemble
 # ---------------------------------------------------------------------------
-ENSEMBLE_THRESHOLD = 2   # votes needed (out of 3) to flag as intrusion
+ENSEMBLE_THRESHOLD = 2   # votes needed (out of N models) to flag as intrusion
 
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
 API_HOST = "0.0.0.0"
 API_PORT = 8000
+
+# ---------------------------------------------------------------------------
+# Telegram notifications
+# ---------------------------------------------------------------------------
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+NOTIFY_CONFIDENCE_THRESHOLD = 0.75
