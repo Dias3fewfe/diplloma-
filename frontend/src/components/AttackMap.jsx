@@ -33,6 +33,7 @@ export default function AttackMap() {
   const [feed,     setFeed]     = useState([])   // last 12 attacks for sidebar
   const [stats,    setStats]    = useState({ total: 0, ips: 0, countries: 0 })
   const [status,   setStatus]   = useState('Loading…')
+  const [demoBusy, setDemoBusy] = useState(false)
   const seenIds = useRef(new Set())
 
   useEffect(() => {
@@ -111,6 +112,18 @@ export default function AttackMap() {
     }
   }
 
+  const loadDemo = async () => {
+    setDemoBusy(true)
+    try {
+      await axios.post(`${API}/demo/populate`, {}, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('nids_token')}` },
+      })
+      seenIds.current.clear()   // reset so all demo alerts are picked up
+      await loadAttacks()
+    } catch {}
+    finally { setDemoBusy(false) }
+  }
+
   useEffect(() => {
     loadAttacks()
     const id = setInterval(loadAttacks, 5000)
@@ -137,7 +150,16 @@ export default function AttackMap() {
         {statBox('Attacks plotted', stats.total)}
         {statBox('Unique IPs', stats.ips)}
         {statBox('Countries', stats.countries)}
-        <div style={{ marginLeft: 'auto', fontSize: 10, color: '#334155' }}>Auto-refresh every 5s · Public IPs only</div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 10, color: '#334155' }}>Auto-refresh every 5s · Public IPs only</span>
+          <button
+            onClick={loadDemo}
+            disabled={demoBusy}
+            style={{ fontSize: 11, padding: '4px 12px', borderRadius: 3, backgroundColor: demoBusy ? '#1a1d27' : '#1e3a5f', color: demoBusy ? '#334155' : '#3b82f6', border: '1px solid #2d5fa6', cursor: demoBusy ? 'not-allowed' : 'pointer' }}
+          >
+            {demoBusy ? 'Loading…' : 'Load Demo Data'}
+          </button>
+        </div>
       </div>
 
       {/* Map + sidebar */}

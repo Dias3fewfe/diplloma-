@@ -478,3 +478,80 @@ def get_stats(db: Session = Depends(get_db)) -> APIResponse:
         attack_type_breakdown=attack_type_breakdown,
     )
     return APIResponse.ok(stats.model_dump())
+
+
+# ---------------------------------------------------------------------------
+# Demo
+# ---------------------------------------------------------------------------
+
+_DEMO_ENTRIES = [
+    # (source_ip, destination_ip, protocol, attack_type, confidence, votes, hours_ago)
+    ("114.114.114.114", "10.0.0.5",   "TCP", "DDoS",             1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 0.5),
+    ("123.125.114.144", "10.0.0.5",   "UDP", "DDoS",             0.75, {"isolation_forest":1,"lof":1,"svm":0,"random_forest":1}, 1.0),
+    ("180.76.76.76",    "10.0.0.8",   "TCP", "DoS Hulk",         1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 1.5),
+    ("36.110.0.1",      "10.0.0.3",   "TCP", "Bot",              0.75, {"isolation_forest":0,"lof":1,"svm":1,"random_forest":1}, 2.0),
+    ("1.180.0.1",       "10.0.0.10",  "TCP", "PortScan",         0.75, {"isolation_forest":1,"lof":0,"svm":1,"random_forest":1}, 2.5),
+    ("77.88.8.8",       "10.0.0.5",   "TCP", "DDoS",             1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 3.0),
+    ("5.255.255.77",    "10.0.0.2",   "UDP", "DoS Hulk",         0.75, {"isolation_forest":1,"lof":1,"svm":0,"random_forest":1}, 3.5),
+    ("91.108.56.100",   "10.0.0.7",   "TCP", "Infiltration",     1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 4.0),
+    ("8.8.8.8",         "10.0.0.5",   "UDP", "DDoS",             1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 5.0),
+    ("104.16.0.1",      "10.0.0.9",   "TCP", "PortScan",         0.75, {"isolation_forest":1,"lof":1,"svm":0,"random_forest":1}, 6.0),
+    ("17.172.224.47",   "10.0.0.4",   "TCP", "Bot",              0.75, {"isolation_forest":0,"lof":1,"svm":1,"random_forest":1}, 7.0),
+    ("185.220.101.34",  "10.0.0.5",   "TCP", "DDoS",             1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 8.0),
+    ("78.46.0.1",       "10.0.0.6",   "TCP", "DoS Hulk",         0.75, {"isolation_forest":1,"lof":0,"svm":1,"random_forest":1}, 9.0),
+    ("194.165.16.1",    "10.0.0.5",   "UDP", "DDoS",             1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 10.0),
+    ("213.0.0.1",       "10.0.0.3",   "TCP", "PortScan",         0.75, {"isolation_forest":1,"lof":1,"svm":0,"random_forest":1}, 11.0),
+    ("187.72.0.1",      "10.0.0.5",   "TCP", "DDoS",             1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 12.0),
+    ("200.160.0.1",     "10.0.0.8",   "UDP", "Bot",              0.75, {"isolation_forest":0,"lof":1,"svm":1,"random_forest":1}, 14.0),
+    ("45.64.0.1",       "10.0.0.5",   "TCP", "DoS Hulk",         1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 16.0),
+    ("103.235.46.1",    "10.0.0.2",   "TCP", "Heartbleed",       1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 18.0),
+    ("175.45.176.1",    "10.0.0.5",   "UDP", "DDoS",             0.75, {"isolation_forest":1,"lof":1,"svm":0,"random_forest":1}, 20.0),
+    ("112.175.0.1",     "10.0.0.7",   "TCP", "PortScan",         0.75, {"isolation_forest":1,"lof":0,"svm":1,"random_forest":1}, 22.0),
+    ("194.206.0.1",     "10.0.0.5",   "TCP", "DDoS",             1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 24.0),
+    ("212.58.244.1",    "10.0.0.4",   "TCP", "Bot",              0.75, {"isolation_forest":0,"lof":1,"svm":1,"random_forest":1}, 30.0),
+    ("210.130.0.1",     "10.0.0.5",   "TCP", "DoS Hulk",         1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 36.0),
+    ("196.216.0.1",     "10.0.0.9",   "TCP", "Heartbleed",       1.00, {"isolation_forest":1,"lof":1,"svm":1,"random_forest":1}, 48.0),
+]
+
+
+@router.post("/demo/populate")
+def demo_populate(db: Session = Depends(get_db)) -> APIResponse:
+    """Insert demo INTRUSION alerts with real public IPs for Attack Map demonstration.
+
+    Inserts up to 25 alerts with IPs from China, Russia, USA, Germany, Netherlands,
+    Brazil, India, South Korea, France, UK, Japan, and South Africa. Skips entries
+    whose source_ip already exists in the DB to avoid duplicates.
+
+    Args:
+        db: Injected database session.
+
+    Returns:
+        APIResponse with count of newly inserted alerts.
+    """
+    from datetime import timedelta
+
+    existing_ips = {a.source_ip for a in db.query(Alert.source_ip).all()}
+    now = datetime.utcnow()
+    inserted = 0
+
+    for src_ip, dst_ip, proto, attack_type, confidence, votes, hours_ago in _DEMO_ENTRIES:
+        if src_ip in existing_ips:
+            continue
+        ts = now - timedelta(hours=hours_ago)
+        alert = Alert(
+            timestamp=ts,
+            source_ip=src_ip,
+            destination_ip=dst_ip,
+            protocol=proto,
+            prediction="INTRUSION",
+            model_votes=votes,
+            attack_confidence=confidence,
+            attack_type=attack_type,
+            created_at=ts,
+        )
+        db.add(alert)
+        existing_ips.add(src_ip)
+        inserted += 1
+
+    db.commit()
+    return APIResponse.ok({"inserted": inserted})
