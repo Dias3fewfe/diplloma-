@@ -156,3 +156,11 @@ class StatsResponse(BaseModel):
         default_factory=dict,
         description="Count of intrusion alerts per attack type.",
     )
+    threat_level: str = Field(
+        default="LOW",
+        description="Current threat level: LOW / MEDIUM / HIGH / CRITICAL.",
+    )
+    recent_intrusions_1h: int = Field(
+        default=0,
+        description="Number of intrusions detected in the last 60 minutes.",
+    )

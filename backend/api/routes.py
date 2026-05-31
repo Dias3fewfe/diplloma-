@@ -15,7 +15,7 @@ import csv
 import io
 import random
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -469,6 +469,22 @@ def get_stats(db: Session = Depends(get_db)) -> APIResponse:
     )
     attack_type_breakdown = {row[0]: row[1] for row in breakdown_rows if row[0]}
 
+    cutoff_1h = datetime.utcnow() - timedelta(hours=1)
+    recent_intrusions_1h = (
+        db.query(Alert)
+        .filter(Alert.prediction == "INTRUSION", Alert.created_at >= cutoff_1h)
+        .count()
+    )
+
+    if recent_intrusions_1h == 0:
+        threat_level = "LOW"
+    elif recent_intrusions_1h <= 5:
+        threat_level = "MEDIUM"
+    elif recent_intrusions_1h <= 20:
+        threat_level = "HIGH"
+    else:
+        threat_level = "CRITICAL"
+
     stats = StatsResponse(
         total_alerts=total,
         intrusion_count=intrusion_count,
@@ -476,8 +492,60 @@ def get_stats(db: Session = Depends(get_db)) -> APIResponse:
         detection_rate=round(intrusion_count / total, 4) if total else 0.0,
         model_vote_totals=model_vote_totals,
         attack_type_breakdown=attack_type_breakdown,
+        threat_level=threat_level,
+        recent_intrusions_1h=recent_intrusions_1h,
     )
     return APIResponse.ok(stats.model_dump())
+
+
+# ---------------------------------------------------------------------------
+# Timeline
+# ---------------------------------------------------------------------------
+
+@router.get("/stats/timeline")
+def get_timeline(hours: int = 24, db: Session = Depends(get_db)) -> APIResponse:
+    """Return hourly intrusion counts for the last N hours (default 24).
+
+    Always returns exactly `hours` buckets so the frontend chart has a
+    complete x-axis even when some hours have no activity.
+
+    Args:
+        hours: How many past hours to include (1–168).
+        db:    Injected database session.
+
+    Returns:
+        APIResponse whose data is a list of {hour, label, intrusions, normal}.
+    """
+    hours = max(1, min(hours, 168))
+    now   = datetime.utcnow()
+    cutoff = now - timedelta(hours=hours)
+
+    alerts = (
+        db.query(Alert)
+        .filter(Alert.created_at >= cutoff)
+        .all()
+    )
+
+    buckets: dict[str, dict] = {}
+    for i in range(hours):
+        slot = now - timedelta(hours=hours - 1 - i)
+        key  = slot.strftime("%Y-%m-%d %H")
+        buckets[key] = {
+            "hour":       key,
+            "label":      slot.strftime("%H:00"),
+            "intrusions": 0,
+            "normal":     0,
+        }
+
+    for a in alerts:
+        key = a.created_at.strftime("%Y-%m-%d %H")
+        if key in buckets:
+            if a.prediction == "INTRUSION":
+                buckets[key]["intrusions"] += 1
+            else:
+                buckets[key]["normal"] += 1
+
+    return APIResponse.ok(list(buckets.values()))
 
 
 # ---------------------------------------------------------------------------
