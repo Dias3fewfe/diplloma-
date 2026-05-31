@@ -6,6 +6,22 @@ const PAGE     = 20
 const card     = { backgroundColor: '#1a1d27', border: '1px solid #2a2d3a', borderRadius: 4 }
 const TH_STYLE = { padding: '8px 12px', fontSize: 11, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#64748b', textAlign: 'left', borderBottom: '1px solid #2a2d3a', background: '#1a1d27', position: 'sticky', top: 0 }
 
+const toFlag = code => code
+  ? code.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)))
+  : ''
+
+function GeoCell({ ip, geoMap }) {
+  if (!ip || ip === 'unknown') return <span style={{ color: '#334155' }}>—</span>
+  const geo = geoMap[ip]
+  if (geo === undefined) return <span style={{ color: '#334155', fontSize: 10 }}>...</span>
+  if (!geo) return <span style={{ color: '#334155', fontSize: 10 }}>Private</span>
+  return (
+    <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>
+      {toFlag(geo.countryCode)} {geo.city ? `${geo.city}, ` : ''}{geo.country}
+    </span>
+  )
+}
+
 function PredBadge({ v }) {
   const intr = v === 'INTRUSION'
   return (
@@ -52,6 +68,7 @@ export default function AlertsTable() {
   const [page,    setPage]    = useState(0)
   const [filter,  setFilter]  = useState('')
   const [loading, setLoading] = useState(false)
+  const [geoMap,  setGeoMap]  = useState({})
 
   const fetch = useCallback(async () => {
     setLoading(true)
@@ -59,7 +76,22 @@ export default function AlertsTable() {
       const params = { limit: PAGE, offset: page * PAGE }
       if (filter) params.prediction = filter
       const { data: res } = await axios.get(`${API}/alerts`, { params })
-      if (res.status === 'ok') setData(res.data)
+      if (res.status === 'ok') {
+        setData(res.data)
+        const ips = [...new Set(res.data.alerts.map(a => a.source_ip).filter(Boolean))]
+        if (ips.length) {
+          // mark as loading
+          setGeoMap(prev => {
+            const next = { ...prev }
+            ips.forEach(ip => { if (!(ip in next)) next[ip] = undefined })
+            return next
+          })
+          try {
+            const { data: geo } = await axios.post(`${API}/geo/batch`, { ips })
+            setGeoMap(prev => ({ ...prev, ...geo }))
+          } catch {}
+        }
+      }
     } catch {}
     finally { setLoading(false) }
   }, [page, filter])
@@ -93,19 +125,20 @@ export default function AlertsTable() {
         <div style={{ overflowX: 'auto', maxHeight: '64vh', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr>{['Timestamp', 'Source IP', 'Destination IP', 'Proto', 'Prediction', 'Attack Type', 'Confidence', 'Models Voted'].map(h => (
+              <tr>{['Timestamp', 'Source IP', 'Location', 'Destination IP', 'Proto', 'Prediction', 'Attack Type', 'Confidence', 'Models Voted'].map(h => (
                 <th key={h} style={TH_STYLE}>{h}</th>
               ))}</tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={8} style={{ padding: '20px 12px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>Loading…</td></tr>}
+              {loading && <tr><td colSpan={9} style={{ padding: '20px 12px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>Loading…</td></tr>}
               {!loading && data.alerts.length === 0 && (
-                <tr><td colSpan={8} style={{ padding: '32px 12px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>No alerts — run a simulation first.</td></tr>
+                <tr><td colSpan={9} style={{ padding: '32px 12px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>No alerts — run a simulation first.</td></tr>
               )}
               {!loading && data.alerts.map(a => (
                 <tr key={a.id} style={{ borderBottom: '1px solid #1e2130', backgroundColor: a.prediction === 'INTRUSION' ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
                   <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: '#64748b', whiteSpace: 'nowrap' }}>{fmt(a.created_at)}</td>
                   <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: '#94a3b8' }}>{a.source_ip}</td>
+                  <td style={{ padding: '7px 12px' }}><GeoCell ip={a.source_ip} geoMap={geoMap} /></td>
                   <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: '#94a3b8' }}>{a.destination_ip}</td>
                   <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: '#64748b', textTransform: 'uppercase', fontSize: 11 }}>{a.protocol}</td>
                   <td style={{ padding: '7px 12px' }}><PredBadge v={a.prediction} /></td>

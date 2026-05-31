@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from backend.api.auth_routes import router_auth
 from backend.api.capture_routes import router_capture, set_main_loop, set_notifier
+from backend.api.geo_routes import router_geo
 from backend.api.routes import router
 from backend.config import API_HOST, API_PORT
 from backend.db.database import SessionLocal, init_db
@@ -45,6 +46,7 @@ app.add_middleware(
 app.include_router(router_auth)
 app.include_router(router)
 app.include_router(router_capture)
+app.include_router(router_geo)
 
 
 # ---------------------------------------------------------------------------
