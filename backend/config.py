@@ -112,3 +112,15 @@ SECRET_KEY = os.getenv("SECRET_KEY", "nids-secret-key-change-in-production")
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 ACCESS_TOKEN_EXPIRE_HOURS = 24
+
+# ---------------------------------------------------------------------------
+# Google OAuth
+# ---------------------------------------------------------------------------
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.getenv(
+    "GOOGLE_REDIRECT_URI",
+    "http://localhost:8000/api/auth/google/callback",
+)
+GOOGLE_ALLOWED_EMAIL = os.getenv("GOOGLE_ALLOWED_EMAIL", "")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")

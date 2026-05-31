@@ -16,6 +16,25 @@ export default function App() {
   const [ready,    setReady]    = useState(false)  // finished verifying token
 
   useEffect(() => {
+    // Handle redirect from Google OAuth: ?token=...&username=...
+    const params = new URLSearchParams(window.location.search)
+    const oauthToken = params.get('token')
+    const oauthUser  = params.get('username')
+    const oauthError = params.get('error')
+
+    if (oauthToken && oauthUser) {
+      localStorage.setItem('nids_token', oauthToken)
+      localStorage.setItem('nids_user',  oauthUser)
+      window.history.replaceState({}, '', window.location.pathname)
+      setUser(oauthUser)
+      setReady(true)
+      return
+    }
+
+    if (oauthError) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+
     const token = localStorage.getItem('nids_token')
     if (!token) { setReady(true); return }
 
