@@ -11,3 +11,6 @@ __pycache__/
 # Frontend
 node_modules/
 frontend/dist/
+
+# Claude Code local settings (may contain API keys)
+.claude/settings.local.json
