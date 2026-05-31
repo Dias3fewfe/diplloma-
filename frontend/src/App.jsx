@@ -5,10 +5,11 @@ import LiveDetection from './components/LiveDetection'
 import LiveCapturePanel from './components/LiveCapturePanel'
 import AlertsTable from './components/AlertsTable'
 import ModelsPanel from './components/ModelsPanel'
+import AttackMap from './components/AttackMap'
 import LoginPage from './components/LoginPage'
 
 const API  = `${import.meta.env.VITE_API_URL}/api`
-const TABS = ['Overview', 'Live Detection', 'Packet Capture', 'Alerts', 'Models']
+const TABS = ['Overview', 'Live Detection', 'Packet Capture', 'Alerts', 'Attack Map', 'Models']
 
 export default function App() {
   const [tab,      setTab]      = useState('Overview')
@@ -97,6 +98,7 @@ export default function App() {
         {tab === 'Live Detection'  && <LiveDetection />}
         {tab === 'Packet Capture'  && <LiveCapturePanel />}
         {tab === 'Alerts'          && <AlertsTable />}
+        {tab === 'Attack Map'      && <AttackMap />}
         {tab === 'Models'          && <ModelsPanel />}
       </main>
     </div>
