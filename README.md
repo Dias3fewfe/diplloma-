@@ -210,7 +210,9 @@ diplloma/
 
 ### Overview
 - Ключевые метрики: всего алертов, вторжений, detection rate
-- BarChart топ-5 типов атак
+- **Threat Level** — индикатор уровня угрозы в реальном времени: LOW / MEDIUM / HIGH / CRITICAL на основе количества вторжений за последний час
+- **Intrusion Timeline** — Area chart за последние 24 часа: красная линия (вторжения) и зелёная (нормальный трафик) по часовым bucket-ам
+- BarChart топ-6 типов атак
 - Индикатор статуса Telegram
 
 ### Live Detection
@@ -339,6 +341,7 @@ http://localhost:5173
 | `GET` | `/api/notification-status` | Статус Telegram |
 | `POST` | `/api/geo/batch` | Геолокация списка IP (страна, город, lat/lon) |
 | `POST` | `/api/demo/populate` | Вставить 25 демо-алертов с реальными публичными IP |
+| `GET` | `/api/stats/timeline` | Почасовые bucket-ы вторжений за последние N часов |
 | `POST` | `/api/capture/start` | Начать захват пакетов |
 | `POST` | `/api/capture/stop` | Остановить захват |
 | `GET` | `/api/capture/status` | Счётчики захвата |
