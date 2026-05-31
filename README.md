@@ -8,7 +8,7 @@
 
 NIDS анализирует параметры сетевого трафика и в реальном времени определяет, является ли соединение нормальным или потенциальным вторжением. Система использует **ансамбль из 4 моделей**: три алгоритма детектирования аномалий (обучение без учителя) и один классификатор на основе случайного леса (обучение с учителем). Результат принимается **голосованием большинства** (≥ 2 из 4 голосов = вторжение).
 
-Дополнительно система определяет **тип атаки** (DDoS, PortScan, BruteForce и др.) и отправляет уведомления в **Telegram** при обнаружении угрозы с высокой уверенностью.
+Дополнительно система определяет **тип атаки** (DDoS, PortScan, BruteForce и др.), отправляет уведомления в **Telegram**, отображает географию атак на **карте мира в реальном времени** и определяет **геолокацию** атакующих IP-адресов.
 
 ---
 
@@ -20,31 +20,32 @@ NIDS анализирует параметры сетевого трафика �
 | API (backend) | https://diplloma-api.onrender.com |
 | API документация | https://diplloma-api.onrender.com/docs |
 
-**Доступ:** `admin` / `admin123`
+**Доступ:** `admin` / `admin123` или кнопка **Sign in with Google**
 
 ---
 
 ## Архитектура
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  React Dashboard                     │
-│  Overview │ Live Detection │ Alerts │ Models │ ...   │
-└───────────────────┬─────────────────────────────────┘
-                    │ HTTP / WebSocket
-┌───────────────────▼─────────────────────────────────┐
-│                 FastAPI Backend                      │
-│  /api/predict   /api/simulate   /api/alerts          │
-│  /api/stats     /api/auth       /api/capture         │
-└───────────┬───────────────┬─────────────────────────┘
-            │               │
-┌───────────▼───────┐ ┌─────▼──────────────────────────┐
-│   ML Ensemble     │ │   SQLite Database               │
-│  Isolation Forest │ │   alerts table                  │
-│  LOF              │ │   (prediction, attack_type,     │
-│  One-Class SVM    │ │    confidence, model_votes)     │
-│  Random Forest    │ └─────────────────────────────────┘
-└───────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        React Dashboard                            │
+│  Overview │ Live Detection │ Packet Capture │ Alerts │ Attack Map │
+└──────────────────────┬───────────────────────────────────────────┘
+                       │ HTTP / WebSocket
+┌──────────────────────▼───────────────────────────────────────────┐
+│                      FastAPI Backend                              │
+│  /api/predict   /api/simulate   /api/alerts   /api/capture        │
+│  /api/stats     /api/auth       /api/geo/batch                    │
+└──────────┬──────────────────┬────────────────┬────────────────────┘
+           │                  │                │
+┌──────────▼────────┐ ┌───────▼──────────┐ ┌──▼────────────────────┐
+│   ML Ensemble     │ │ SQLite Database  │ │ ip-api.com            │
+│  Isolation Forest │ │ alerts table     │ │ IP Geolocation        │
+│  LOF              │ │ (prediction,     │ │ (country, city, lat,  │
+│  One-Class SVM    │ │  attack_type,    │ │  lng)                 │
+│  Random Forest    │ │  confidence,     │ └───────────────────────┘
+└───────────────────┘ │  model_votes)    │
+                      └──────────────────┘
 ```
 
 ---
@@ -57,9 +58,11 @@ NIDS анализирует параметры сетевого трафика �
 | **ML** | scikit-learn, pandas, numpy, joblib |
 | **Database** | SQLite, SQLAlchemy |
 | **Frontend** | React 18, Vite, Recharts, TailwindCSS |
+| **Map** | Leaflet.js, react-leaflet, CartoDB Dark tiles |
 | **Live Capture** | Scapy |
+| **Geolocation** | ip-api.com (бесплатный, без API ключа) |
 | **Notifications** | Telegram Bot API, httpx |
-| **Auth** | JWT (python-jose) |
+| **Auth** | JWT (python-jose), Google OAuth 2.0 |
 | **Deploy** | Vercel (frontend), Render (backend) |
 
 ---
@@ -174,8 +177,9 @@ diplloma/
 │   │   └── capture.py            # Live-захват пакетов через Scapy
 │   ├── api/
 │   │   ├── routes.py             # /predict /simulate /alerts /stats /export
-│   │   ├── auth_routes.py        # /auth/login /auth/verify (JWT)
+│   │   ├── auth_routes.py        # /auth/login /auth/verify (JWT) + Google OAuth
 │   │   ├── capture_routes.py     # /capture/* + WebSocket /ws/live
+│   │   ├── geo_routes.py         # /geo/batch — геолокация IP через ip-api.com
 │   │   └── schemas.py            # Pydantic модели
 │   └── db/
 │       └── database.py           # SQLite, таблица alerts
@@ -186,9 +190,10 @@ diplloma/
 │           ├── Overview.jsx      # Статистика, графики
 │           ├── LiveDetection.jsx # Симуляция в реальном времени
 │           ├── LiveCapturePanel.jsx # Живой захват пакетов
-│           ├── AlertsTable.jsx   # Таблица алертов, экспорт CSV/PDF
+│           ├── AlertsTable.jsx   # Таблица алертов, геолокация, экспорт CSV/PDF
+│           ├── AttackMap.jsx     # Карта атак в реальном времени (Leaflet)
 │           ├── ModelsPanel.jsx   # Информация о моделях
-│           └── LoginPage.jsx     # Страница входа
+│           └── LoginPage.jsx     # Страница входа (admin + Google OAuth)
 ├── data/
 │   ├── raw/                      # CICIDS2017.csv (не в git)
 │   └── processed/
@@ -217,16 +222,41 @@ diplloma/
 - Выбор сетевого интерфейса
 - Живой захват трафика через Scapy
 - WebSocket-стрим результатов в браузер
-- Таблица потоков: IP, порт, протокол, предикшн
+- Таблица потоков: IP, порт, протокол, байты, предикшн, голоса
 
 ### Alerts
 - Пагинированная таблица всех алертов из БД
 - Фильтр по типу (Intrusion / Normal / All)
+- **Геолокация** source IP: флаг страны, город, страна (ip-api.com)
 - **Экспорт в CSV и PDF**
+
+### Attack Map
+- Тёмная карта мира на основе Leaflet.js + CartoDB Dark Matter tiles
+- Пульсирующие маркеры на координатах атакующих IP
+- Цвет маркера зависит от типа атаки (DDoS — красный, PortScan — жёлтый и др.)
+- Клик по маркеру → попап с IP, городом, страной, типом атаки, уверенностью
+- **Live Feed** — боковая панель с последними 12 атаками в реальном времени
+- Статистика: кол-во точек на карте, уникальных IP, стран
+- Авто-обновление каждые **5 секунд**
 
 ### Models
 - Карточки 4 моделей с параметрами обучения
 - Бейджи SUPERVISED / UNSUPERVISED
+
+---
+
+## Авторизация
+
+### Admin / Password
+```
+Логин: admin
+Пароль: admin123
+```
+
+### Google OAuth
+Кнопка **Sign in with Google** на странице входа. Доступ разрешён только для аккаунта `dkadirhanovv@gmail.com`.
+
+Поток: браузер → `/api/auth/google` → Google consent screen → `/api/auth/google/callback` → JWT → дашборд.
 
 ---
 
@@ -254,7 +284,7 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Заполнить TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID (опционально)
+# Заполнить переменные (Telegram опционально, Google OAuth опционально)
 ```
 
 ### 4. Подготовить данные и обучить модели
@@ -288,16 +318,16 @@ npm run dev
 http://localhost:5173
 ```
 
-**Логин:** `admin` / `admin123`
-
 ---
 
 ## API эндпоинты
 
 | Метод | URL | Описание |
 |---|---|---|
-| `POST` | `/api/auth/login` | Получить JWT токен |
+| `POST` | `/api/auth/login` | Получить JWT токен (admin/password) |
 | `GET` | `/api/auth/verify` | Проверить токен |
+| `GET` | `/api/auth/google` | Редирект на Google OAuth |
+| `GET` | `/api/auth/google/callback` | Обработка callback, выдача JWT |
 | `POST` | `/api/predict` | Предсказание для одного вектора признаков |
 | `POST` | `/api/simulate` | Симуляция на 100 случайных строках |
 | `GET` | `/api/alerts` | Список алертов (с пагинацией и фильтром) |
@@ -306,6 +336,7 @@ http://localhost:5173
 | `GET` | `/api/stats` | Агрегированная статистика |
 | `GET` | `/api/health` | Проверка доступности API |
 | `GET` | `/api/notification-status` | Статус Telegram |
+| `POST` | `/api/geo/batch` | Геолокация списка IP-адресов |
 | `POST` | `/api/capture/start` | Начать захват пакетов |
 | `POST` | `/api/capture/stop` | Остановить захват |
 | `GET` | `/api/capture/status` | Счётчики захвата |
@@ -329,13 +360,30 @@ TELEGRAM_CHAT_ID=ваш_chat_id
 Уведомление приходит при `confidence >= 75%`. Формат:
 
 ```
-🚨 INTRUSION DETECTED
+INTRUSION DETECTED
 Type: DDoS
 Confidence: 100%
 Source IP: 192.168.1.45
 Protocol: TCP
-Models: IF✓ LOF✓ SVM✓ RF✓
+Models: IF LOF SVM RF
 Time: 2026-05-14 12:34:56
+```
+
+---
+
+## Настройка Google OAuth
+
+1. Создать проект в [Google Cloud Console](https://console.cloud.google.com)
+2. APIs & Services → Credentials → OAuth 2.0 Client ID (Web application)
+3. Добавить Authorized redirect URI: `https://your-backend.onrender.com/api/auth/google/callback`
+4. Добавить в `.env`:
+
+```env
+GOOGLE_CLIENT_ID=your_client_id
+GOOGLE_CLIENT_SECRET=your_client_secret
+GOOGLE_REDIRECT_URI=https://your-backend.onrender.com/api/auth/google/callback
+GOOGLE_ALLOWED_EMAIL=your_email@gmail.com
+FRONTEND_URL=https://your-frontend.vercel.app
 ```
 
 ---
