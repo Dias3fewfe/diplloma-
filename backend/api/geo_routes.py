@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 router_geo = APIRouter(prefix="/api/geo")
 
-_FIELDS = "query,status,country,countryCode,city"
+_FIELDS = "query,status,country,countryCode,city,lat,lon"
 _GEO_URL = f"http://ip-api.com/batch?fields={_FIELDS}"
 
 
@@ -63,6 +63,8 @@ async def geo_batch(body: GeoRequest) -> dict:
                         "country": row.get("country", ""),
                         "countryCode": row.get("countryCode", ""),
                         "city": row.get("city", ""),
+                        "lat": row.get("lat"),
+                        "lon": row.get("lon"),
                     }
     except Exception:
         pass  # network error — return nulls, frontend shows fallback

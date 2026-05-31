@@ -63,12 +63,12 @@ export default function AttackMap() {
       const newPoints = []
       for (const alert of fresh) {
         const geo = geoMap[alert.source_ip]
-        if (!geo) continue
+        if (!geo || geo.lat == null || geo.lon == null) continue
         newPoints.push({
           id: alert.id,
           ip: alert.source_ip,
-          lat: null,  // ip-api returns lat/lng, we need to request them
-          lng: null,
+          lat: geo.lat,
+          lng: geo.lon,
           country: geo.country,
           city: geo.city,
           countryCode: geo.countryCode,
@@ -78,25 +78,7 @@ export default function AttackMap() {
         })
       }
 
-      // fetch lat/lng separately (ip-api batch with lat/lng fields)
-      const publicIps = [...new Set(newPoints.map(p => p.ip))]
-      if (publicIps.length) {
-        try {
-          const resp = await fetch(
-            `http://ip-api.com/batch?fields=query,status,lat,lon,country,countryCode,city`,
-            { method: 'POST', body: JSON.stringify(publicIps.map(q => ({ query: q }))) }
-          )
-          const rows = await resp.json()
-          const latLng = {}
-          rows.forEach(r => { if (r.status === 'success') latLng[r.query] = { lat: r.lat, lng: r.lon } })
-          newPoints.forEach(p => {
-            const ll = latLng[p.ip]
-            if (ll) { p.lat = ll.lat; p.lng = ll.lng }
-          })
-        } catch {}
-      }
-
-      const withCoords = newPoints.filter(p => p.lat !== null)
+      const withCoords = newPoints
 
       setAttacks(prev => {
         const next = [...withCoords, ...prev].slice(0, 500)
