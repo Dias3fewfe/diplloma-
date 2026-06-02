@@ -549,6 +549,152 @@ def get_timeline(hours: int = 24, db: Session = Depends(get_db)) -> APIResponse:
 
 
 # ---------------------------------------------------------------------------
+# Attack Scenario Simulation
+# ---------------------------------------------------------------------------
+
+# Real-world attacker IPs per attack category (publicly known scanner/botnet IPs)
+_SCENARIO_IPS: dict[str, list[str]] = {
+    "DDoS":          ["185.220.101.34", "198.96.155.3",  "199.195.251.9", "185.56.80.65",
+                      "94.102.49.193",  "194.165.16.1",  "79.137.226.9",  "192.42.116.17",
+                      "95.179.133.50",  "185.220.100.1", "185.220.101.1", "104.244.79.6",
+                      "185.220.101.35", "45.141.215.100","185.100.87.206"],
+    "PortScan":      ["45.33.32.156",   "104.131.0.69",  "198.20.69.74",  "71.6.135.131",
+                      "66.240.192.138", "71.6.158.166",  "89.248.167.131","82.221.105.6",
+                      "198.20.69.96",   "198.20.70.114", "80.82.77.139",  "176.9.120.91",
+                      "193.201.9.203",  "87.121.52.186", "91.211.244.68"],
+    "DoS Hulk":      ["172.16.0.100",   "10.0.2.15",     "192.168.100.5", "172.16.0.50",
+                      "192.168.50.4",   "10.0.0.200",    "172.16.1.10",   "192.168.1.200",
+                      "10.10.0.5",      "172.31.0.5",    "192.168.0.200", "10.0.1.100",
+                      "172.16.2.20",    "192.168.2.100", "10.0.3.50"],
+    "DoS GoldenEye": ["172.16.0.2",     "10.0.0.101",    "192.168.100.6", "172.16.0.51",
+                      "192.168.50.5",   "10.0.0.202",    "172.16.1.11",   "192.168.1.201",
+                      "10.10.0.6",      "172.31.0.6"],
+    "DoS slowloris": ["10.0.0.11",      "172.16.0.11",   "192.168.1.11",  "10.0.1.11",
+                      "172.16.1.20",    "192.168.2.11",  "10.0.2.11",     "172.31.0.11"],
+    "Bot":           ["91.108.56.100",  "149.154.160.1", "91.108.4.50",   "91.108.56.50",
+                      "149.154.164.1",  "91.108.8.100",  "149.154.161.1", "91.108.12.50",
+                      "149.154.165.1",  "91.108.16.100"],
+    "Heartbleed":    ["185.176.27.4",   "194.165.16.67", "45.141.84.120", "185.220.101.1",
+                      "194.165.16.68",  "185.176.27.5",  "194.165.16.69"],
+}
+
+_SCENARIO_N = 25   # rows per scenario run
+_VICTIM_IP  = "10.0.0.5"
+
+
+@router.post("/simulate/attack/{attack_type}", response_model=APIResponse)
+def simulate_attack(
+    attack_type: str,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> APIResponse:
+    """Run the ensemble on rows of a specific attack type from the dataset.
+
+    Loads rows whose Label matches *attack_type* (case-insensitive), runs
+    them through the full prediction pipeline, and persists detections.
+    Returns per-row results so the frontend can animate them one by one.
+
+    Args:
+        attack_type:      Attack label to simulate (e.g. 'DDoS', 'PortScan').
+        background_tasks: FastAPI background task queue.
+        request:          FastAPI request (provides access to app.state.notifier).
+        db:               Injected database session.
+
+    Returns:
+        APIResponse with rows, summary counts, and the normalised label used.
+    """
+    csv_path = CLEANED_CSV if CLEANED_CSV.exists() else SAMPLE_CSV
+    if not csv_path.exists():
+        raise HTTPException(status_code=503, detail="Dataset not available.")
+
+    df_all = pd.read_csv(csv_path, low_memory=False)
+    if LABEL_COLUMN not in df_all.columns:
+        raise HTTPException(status_code=503, detail=f"Column '{LABEL_COLUMN}' missing in dataset.")
+
+    # Case-insensitive match against available labels
+    available = df_all[LABEL_COLUMN].unique().tolist()
+    matched_label = next(
+        (lbl for lbl in available if lbl.strip().lower() == attack_type.strip().lower()),
+        None,
+    )
+    if matched_label is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Attack type '{attack_type}' not found. Available: {available}",
+        )
+
+    df_attack = df_all[df_all[LABEL_COLUMN] == matched_label]
+    if df_attack.empty:
+        raise HTTPException(status_code=404, detail=f"No rows for label '{matched_label}'.")
+
+    n = min(_SCENARIO_N, len(df_attack))
+    df_sample = df_attack.sample(n=n, random_state=None)
+    X = df_sample.drop(columns=[LABEL_COLUMN], errors="ignore")
+
+    try:
+        results = predict_batch_scaled(X)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    attack_types_cls = classify_attack_type_batch(X)
+    attacker_pool    = _SCENARIO_IPS.get(matched_label, ["192.168.1.1"])
+    now              = datetime.utcnow()
+    row_results: list[SimulateRow] = []
+    intrusion_count  = 0
+
+    for i, res in enumerate(results):
+        src_ip      = attacker_pool[i % len(attacker_pool)]
+        attack_type_label = attack_types_cls[i]["label"] if res["prediction"] == "INTRUSION" else "BENIGN"
+
+        if res["prediction"] == "INTRUSION":
+            intrusion_count += 1
+            alert = Alert(
+                timestamp=now,
+                source_ip=src_ip,
+                destination_ip=_VICTIM_IP,
+                protocol="TCP",
+                prediction=res["prediction"],
+                model_votes=res["model_votes"],
+                attack_confidence=res["attack_confidence"],
+                attack_type=attack_type_label,
+                created_at=now,
+            )
+            db.add(alert)
+
+            notifier = getattr(request.app.state, "notifier", None)
+            if notifier:
+                background_tasks.add_task(notifier.send_alert, {
+                    "attack_type":       attack_type_label,
+                    "attack_confidence": res["attack_confidence"],
+                    "source_ip":         src_ip,
+                    "protocol":          "TCP",
+                    "model_votes":       res["model_votes"],
+                    "timestamp":         now,
+                })
+
+        row_results.append(SimulateRow(
+            index=i,
+            label=matched_label,
+            prediction=res["prediction"],
+            model_votes=res["model_votes"],
+            attack_confidence=res["attack_confidence"],
+            attack_type=attack_type_label,
+        ))
+
+    db.commit()
+
+    return APIResponse.ok({
+        "attack_type":        matched_label,
+        "rows_evaluated":     n,
+        "intrusions_detected": intrusion_count,
+        "normal_count":       n - intrusion_count,
+        "detection_rate":     round(intrusion_count / n, 4) if n else 0.0,
+        "rows":               [r.model_dump() for r in row_results],
+    })
+
+
+# ---------------------------------------------------------------------------
 # Demo
 # ---------------------------------------------------------------------------
 
