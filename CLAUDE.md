@@ -49,7 +49,7 @@ project/
 - API responses always return JSON with {status, data, error}
 - Keep frontend components small, max 150 lines per file
 
-## Current Status — Updated 14.05.2026 (4)
+## Current Status — Updated 02.06.2026 (5)
 
 ### Completed ✅
 - [x] Project structure created (backend/ frontend/ data/)
@@ -146,6 +146,12 @@ API docs: http://localhost:8000/docs
 1. Создать .env в корне проекта (уже создан)
 2. pip install httpx python-dotenv (или pip install -r requirements.txt)
 3. Перезапустить uvicorn — в консоли появится "Telegram notifier: configured"
+
+- [x] Страница входа redesigned: animated network graph canvas (65 узлов, синие рёбра, красные вспышки атак с рябью, летящие пакеты), split-screen layout (брендинг слева, форма справа с backdrop-blur), count-up анимация счётчиков, теги моделей
+      - frontend/src/components/LoginPage.jsx — NetworkCanvas (canvas 65 nodes, ripple, packets), CountUp, split layout
+- [x] Attack Scenario Simulation — реальные паттерны атак из CICIDS2017 через ML ансамбль:
+      - backend/api/routes.py — POST /api/simulate/attack/{attack_type}: фильтрует датасет по Label, 25 строк, predict_batch_scaled, реальные IP атакующих (_SCENARIO_IPS dict), сохраняет в БД
+      - frontend/src/components/LiveDetection.jsx — 5 кнопок сценариев (PortScan/DDoS/DoS Hulk/Bot/DoS GoldenEye), построчная анимация 120мс, прогресс-бар, баннер INTRUSIONS DETECTED, цветовая схема по типу атаки
 
 ### Remaining
 - [x] Запустить train.py → random_forest.pkl обучен (10MB)
